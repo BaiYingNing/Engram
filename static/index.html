@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engram</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="dark">
+  <div class="app-shell scroll-fade" data-scroll-fade>
+    <div class="page-frame">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ENGRAM 1.1.1</p>
+          <h1>Engram——记忆印迹</h1>
+        </div>
+        <div class="topbar-actions">
+          <button id="statsButton" class="ghost-button topbar-button" type="button">统计</button>
+          <button id="themeToggle" class="ghost-button topbar-button" type="button" aria-label="切换主题">切换主题</button>
+          <button id="fullScreenButton" class="icon-button" type="button" aria-label="进入全屏" title="进入全屏">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4"/>
+            </svg>
+          </button>
+          <button id="settingsButton" class="icon-button" type="button" aria-label="打开设置" title="打开设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h10M18 7h2M8 12h12M4 12h2M4 17h14M20 17h0"/>
+              <circle cx="16" cy="7" r="2"/>
+              <circle cx="8" cy="12" r="2"/>
+              <circle cx="18" cy="17" r="2"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span>当前词书</span>
+          <strong id="currentBook">-</strong>
+          <small id="currentBookMeta">剩余 - / 总数 -</small>
+        </article>
+        <article class="stat-card">
+          <span>今日已复习</span>
+          <strong id="learnedWords">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>今日待复习</span>
+          <strong id="dueWords">-</strong>
+        </article>
+        <article class="stat-card">
+          <span>今日待学词数</span>
+          <strong id="dailyPlanRemaining">-</strong>
+          <small id="dailyPlanMeta">已新学 - / 计划 -</small>
+        </article>
+        <article class="stat-card">
+          <span>已学总词数</span>
+          <strong id="learnedWordsTotal">-</strong>
+        </article>
+      </section>
+
+      <main class="workspace">
+        <section class="word-card" id="wordCard">
+          <div class="card-topline">
+            <span id="progressText">0 / 0</span>
+            <div class="card-meta">
+              <span class="task-type-chip" id="taskTypeTag">新词</span>
+            </div>
+          </div>
+
+          <div class="word-core">
+            <h2 id="wordText">准备中...</h2>
+            <div class="word-core-actions">
+              <button id="speakButton" class="ghost-button" type="button">播放</button>
+              <span class="status-chip" id="reviewStatus">未作答</span>
+            </div>
+          </div>
+
+          <div class="answer-scroll scroll-fade" data-scroll-fade id="answerScroll">
+            <div class="answer-placeholder" id="answerPlaceholder">释义将在显示答案或评分后出现</div>
+            <div class="answer-content is-hidden" id="answerContent">
+              <p class="phonetic-line">
+                <span id="phoneticUk"></span>
+                <span id="phoneticUs"></span>
+              </p>
+              <div class="meanings-list" id="meaningsList"></div>
+            </div>
+          </div>
+
+          <div class="nav-strip">
+            <button id="prevButton" class="ghost-button" type="button">上一词 ←</button>
+            <button id="revealButton" class="primary-button" type="button">显示答案</button>
+            <button id="nextButton" class="ghost-button" type="button">下一词 →</button>
+          </div>
+        </section>
+
+        <section class="review-actions" id="reviewActions">
+          <button class="review-button danger" data-action="unknown" type="button">不认识</button>
+          <button class="review-button warn" data-action="vague" type="button">模糊</button>
+          <button class="review-button success" data-action="known" type="button">认识</button>
+        </section>
+
+        <section class="transition-card is-hidden" id="transitionCard">
+          <div class="transition-eyebrow" id="transitionEyebrow">批次切换</div>
+          <h2 id="transitionTitle">本组学习已完成！</h2>
+          <p id="transitionBody">稍作整理，然后进入下一组单词学习。</p>
+          <div class="transition-actions">
+            <button id="transitionPrevButton" class="ghost-button" type="button">上一词 ←</button>
+            <button id="transitionNextButton" class="primary-button" type="button">进入下一组</button>
+          </div>
+        </section>
+
+        <section class="tips-panel">
+          <p class="tips-row">
+            <span>👁️ <code>Space</code></span>
+            <span>1️⃣不认识 2️⃣模糊 3️⃣认识</span>
+            <span>⬅️切换上下词➡️</span>
+            <span>🔊 <code>P</code></span>
+          </p>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="statsModal">
+    <div class="overlay-backdrop" data-close="stats"></div>
+    <section class="modal-panel stats-modal scroll-fade" data-scroll-fade>
+      <header class="modal-header">
+        <div>
+          <p class="modal-eyebrow">Study Stats</p>
+          <h2>学习统计</h2>
+        </div>
+        <button class="icon-button" data-close="stats" type="button" aria-label="关闭统计">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6 18 18M18 6 6 18"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="stats-toolbar">
+        <div class="segmented" id="statsCategorySwitch">
+          <button class="segment is-active" data-category="study" type="button">学习单词</button>
+          <button class="segment" data-category="new" type="button">新学单词</button>
+          <button class="segment" data-category="review" type="button">复习单词</button>
+          <button class="segment" data-category="due" type="button">待复习单词</button>
+        </div>
+      </div>
+
+      <div class="stats-layout">
+        <section class="stats-section">
+          <div class="section-header">
+            <h3>日历视图</h3>
+            <div class="calendar-controls">
+              <button id="calendarPrev" class="ghost-button small-button" type="button">←</button>
+              <span id="calendarLabel">-</span>
+              <button id="calendarNext" class="ghost-button small-button" type="button">→</button>
+            </div>
+          </div>
+
+          <div class="calendar-weekdays">
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span>六</span>
+            <span>日</span>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+
+        <section class="stats-section">
+          <div class="section-header">
+            <h3>柱状图</h3>
+            <div class="segmented compact" id="chartRangeSwitch">
+              <button class="segment is-active" data-range="7" type="button">近7天</button>
+              <button class="segment" data-range="30" type="button">近1个月</button>
+            </div>
+          </div>
+
+          <div class="chart-area" id="chartBars"></div>
+          <p class="chart-caption" id="chartCaption">-</p>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay hidden" id="settingsModal">
+    <div class="overlay-backdrop" data-close="settings"></div>
+    <section class="modal-panel settings-modal">
+      <header class="modal-header">
+        <div>
+          <p class="modal-eyebrow">Preferences</p>
+          <h2>设置</h2>
+        </div>
+        <button class="icon-button" data-close="settings" type="button" aria-label="关闭设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6 18 18M18 6 6 18"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="stats-toolbar">
+        <div class="segmented" id="settingsViewSwitch">
+          <button class="segment is-active" data-settings-view="general" type="button">偏好设置</button>
+          <button class="segment" data-settings-view="guide" type="button">学习说明</button>
+          <button class="segment" data-settings-view="about" type="button">关于</button>
+        </div>
+      </div>
+
+      <div class="settings-scroll scroll-fade" data-scroll-fade>
+        <div class="settings-panels">
+        <div id="settingsGeneralView">
+          <section class="settings-group">
+            <h3>默认发音</h3>
+            <p class="settings-help compact-help">当前版本暂不可选</p>
+            <div class="segmented" id="accentSwitch">
+              <button class="segment" data-accent="uk" type="button" disabled>英式发音</button>
+              <button class="segment" data-accent="us" type="button" disabled>美式发音</button>
+            </div>
+          </section>
+
+          <section class="settings-group">
+            <h3>学习计划</h3>
+            <div class="settings-grid">
+              <label class="setting-field">
+                <span>每日计划新词数</span>
+                <input id="dailyPlanInput" class="number-field" type="number" min="0" max="500" step="5" value="30">
+              </label>
+              <label class="setting-field">
+                <span>每组词数</span>
+                <span class="select-shell">
+                  <select id="batchSizeSelect" class="select-field">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                    <option value="30" selected>30</option>
+                  </select>
+                </span>
+              </label>
+            </div>
+            <p class="settings-help" id="dailyPlanHint">今日已新学 0 / 计划 30，仍可继续新学。</p>
+          </section>
+        </div>
+
+        <div id="settingsGuideView" class="is-hidden">
+          <section class="settings-group about-panel">
+            <h3>学习说明</h3>
+            <div class="about-content" id="guideContent">加载中...</div>
+          </section>
+        </div>
+
+        <div id="settingsAboutView" class="is-hidden">
+          <section class="settings-group about-panel">
+            <h3>关于 Engram</h3>
+            <div class="about-content" id="aboutContent">加载中...</div>
+          </section>
+        </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

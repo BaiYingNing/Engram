@@ -1,0 +1,52 @@
+{
+  "name": "engram",
+  "version": "1.1.1",
+  "description": "Electron desktop CET6 vocabulary trainer",
+  "author": "BaiYingNing (Byinne)",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "rebuild-db": "node scripts/build-db.js",
+    "dist": "electron-builder --win nsis zip"
+  },
+  "build": {
+    "appId": "com.engram.desktop",
+    "productName": "Engram",
+    "files": [
+      "electron/**/*",
+      "static/**/*",
+      "data/**/*",
+      "scripts/**/*",
+      "docs/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Engram-${version}-Setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  }
+}

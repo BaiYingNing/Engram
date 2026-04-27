@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local runtime data
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.tmp
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.obsidian/
+
+# Private folders
+archived/
+changelogs/
+private/
+
+# Root markdown defaults to private unless explicitly public
+/*.md
+!/README.md
+!/README.zh-CN.md
+
+# Public docs and license
+!/LICENSE
+!/docs/
+!/docs/**/*.md
+
+# Keep source data in repo
+!data/
+!data/**/*.json
