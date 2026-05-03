@@ -811,6 +811,99 @@ code {
   font-size: 14px;
 }
 
+.toggle-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--panel-surface);
+}
+
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0;
+}
+
+.toggle-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.toggle-title {
+  color: var(--text-main);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.toggle-description {
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.toggle-note {
+  margin: 0;
+  padding-top: 4px;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.toggle-switch {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 54px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text-main);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  transition: transform 160ms ease;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--primary);
+  border-color: transparent;
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+  transform: translateX(22px);
+  background: #08131d;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.45;
+}
+
 .number-field,
 .select-field {
   min-height: 46px;
@@ -907,6 +1000,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .toggle-card {
+    align-items: flex-start;
+  }
+
   .stats-layout {
     grid-template-columns: 1fr;
   }
@@ -960,6 +1057,15 @@ code {
 
   .modal-panel {
     padding: 18px;
+  }
+
+  .toggle-card {
+    flex-direction: column;
+  }
+
+  .toggle-switch {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .calendar-cell {

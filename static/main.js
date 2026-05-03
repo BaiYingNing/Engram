@@ -2,11 +2,15 @@ const DEFAULT_DAILY_PLAN = 30;
 const DEFAULT_BATCH_SIZE = 30;
 const DUE_PROJECTION_DAYS = 120;
 const BATCH_SIZE_OPTIONS = [5, 10, 15, 20, 25, 30];
+const ENHANCED_SILENT_KEEP_ALIVE_GAIN = 0.00005;
+const ENHANCED_SILENT_KEEP_ALIVE_FREQUENCY = 18000;
 
 const STORAGE_KEYS = {
   theme: "engram-theme",
   dailyPlan: "engram-daily-plan",
   batchSize: "engram-batch-size",
+  silentKeepAlive: "engram-silent-keepalive",
+  enhancedSilentKeepAlive: "engram-enhanced-silent-keepalive",
   session: "engram-current-session"
 };
 
@@ -29,6 +33,12 @@ const state = {
   isFullScreen: false,
   viewMode: "study",
   allowAutoplay: false,
+  silentKeepAliveEnabled: false,
+  enhancedSilentKeepAliveEnabled: false,
+  silentKeepAliveContext: null,
+  silentKeepAliveSource: null,
+  silentKeepAliveGainNode: null,
+  silentKeepAlivePromise: null,
   hasPlayedInitialAutoplay: false,
   autoplayTimer: null,
   lastForegroundAt: 0,
@@ -103,7 +113,9 @@ const els = {
   guideContent: document.getElementById("guideContent"),
   dailyPlanInput: document.getElementById("dailyPlanInput"),
   dailyPlanHint: document.getElementById("dailyPlanHint"),
-  batchSizeSelect: document.getElementById("batchSizeSelect")
+  batchSizeSelect: document.getElementById("batchSizeSelect"),
+  silentKeepAliveToggle: document.getElementById("silentKeepAliveToggle"),
+  enhancedSilentKeepAliveToggle: document.getElementById("enhancedSilentKeepAliveToggle")
 };
 
 const actionText = {
@@ -180,6 +192,14 @@ function readStoredNumber(key, fallback, normalize) {
     return fallback;
   }
   return normalize(stored);
+}
+
+function readStoredBoolean(key, fallback) {
+  const stored = localStorage.getItem(key);
+  if (stored == null) {
+    return fallback;
+  }
+  return stored === "true";
 }
 
 function getCurrentWord() {
@@ -637,6 +657,151 @@ async function warmupSpeechEngine() {
   await state.speechWarmupPromise;
 }
 
+function getSilentKeepAliveGainValue() {
+  return state.enhancedSilentKeepAliveEnabled ? ENHANCED_SILENT_KEEP_ALIVE_GAIN : 0;
+}
+
+function getSilentKeepAliveFrequencyValue() {
+  return state.enhancedSilentKeepAliveEnabled ? ENHANCED_SILENT_KEEP_ALIVE_FREQUENCY : 220;
+}
+
+async function disposeSilentKeepAliveContext() {
+  const context = state.silentKeepAliveContext;
+  state.silentKeepAliveContext = null;
+  state.silentKeepAliveSource = null;
+  state.silentKeepAliveGainNode = null;
+
+  if (!context || context.state === "closed") {
+    return;
+  }
+
+  try {
+    await context.close();
+  } catch (error) {
+    console.error("Failed to dispose silent keep-alive audio context.", error);
+  }
+}
+
+function attachSilentKeepAliveStateListener(context) {
+  context.onstatechange = () => {
+    if (context !== state.silentKeepAliveContext || !state.silentKeepAliveEnabled) {
+      return;
+    }
+
+    if (context.state === "interrupted" || context.state === "closed") {
+      restartSilentKeepAlive().catch(console.error);
+    }
+  };
+}
+
+async function createSilentKeepAliveContext(AudioContextCtor) {
+  const context = new AudioContextCtor();
+  const gainNode = context.createGain();
+  const source = context.createOscillator();
+
+  source.type = "sine";
+  source.frequency.value = getSilentKeepAliveFrequencyValue();
+  gainNode.gain.value = getSilentKeepAliveGainValue();
+
+  source.connect(gainNode);
+  gainNode.connect(context.destination);
+  source.start();
+
+  state.silentKeepAliveContext = context;
+  state.silentKeepAliveSource = source;
+  state.silentKeepAliveGainNode = gainNode;
+  attachSilentKeepAliveStateListener(context);
+
+  return context;
+}
+
+async function startSilentKeepAlive() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    return;
+  }
+
+  if (state.silentKeepAlivePromise) {
+    await state.silentKeepAlivePromise;
+    return;
+  }
+
+  state.silentKeepAlivePromise = (async () => {
+    try {
+      let context = state.silentKeepAliveContext;
+      const needsRebuild = !context || context.state === "closed" || context.state === "interrupted";
+      if (needsRebuild) {
+        await disposeSilentKeepAliveContext();
+        context = await createSilentKeepAliveContext(AudioContextCtor);
+      }
+
+      if (context.state !== "running") {
+        try {
+          await context.resume();
+        } catch (error) {
+          console.error("Failed to resume silent keep-alive audio context.", error);
+        }
+      }
+
+      if (context.state !== "running") {
+        await disposeSilentKeepAliveContext();
+        context = await createSilentKeepAliveContext(AudioContextCtor);
+        if (context.state !== "running") {
+          await context.resume();
+        }
+      }
+
+      if (state.silentKeepAliveGainNode) {
+        state.silentKeepAliveGainNode.gain.value = getSilentKeepAliveGainValue();
+      }
+      if (state.silentKeepAliveSource) {
+        state.silentKeepAliveSource.frequency.value = getSilentKeepAliveFrequencyValue();
+      }
+    } catch (error) {
+      console.error("Failed to start silent keep-alive audio.", error);
+    } finally {
+      state.silentKeepAlivePromise = null;
+    }
+  })();
+
+  await state.silentKeepAlivePromise;
+}
+
+async function stopSilentKeepAlive({ close = false } = {}) {
+  if (state.silentKeepAlivePromise) {
+    await state.silentKeepAlivePromise;
+  }
+
+  try {
+    if (close) {
+      await disposeSilentKeepAliveContext();
+      return;
+    }
+
+    await disposeSilentKeepAliveContext();
+  } catch (error) {
+    console.error("Failed to stop silent keep-alive audio.", error);
+  }
+}
+
+async function restartSilentKeepAlive() {
+  if (!state.silentKeepAliveEnabled) {
+    return;
+  }
+
+  await stopSilentKeepAlive({ close: true });
+  await startSilentKeepAlive();
+}
+
+async function syncSilentKeepAlive() {
+  if (state.silentKeepAliveEnabled) {
+    await startSilentKeepAlive();
+    return;
+  }
+
+  await stopSilentKeepAlive();
+}
+
 function chooseVoice(preferredAccent) {
   const voices = state.voices.length ? state.voices : getAvailableVoices();
   const accent = preferredAccent === "us" ? "us" : "uk";
@@ -662,6 +827,10 @@ async function speakCurrentWord() {
   const item = getCurrentWord();
   if (!item || !("speechSynthesis" in window)) {
     return;
+  }
+
+  if (state.silentKeepAliveEnabled) {
+    await syncSilentKeepAlive();
   }
 
   await waitForSpeechReady();
@@ -1239,6 +1408,13 @@ function renderSettingsView() {
   els.settingsGeneralView.classList.toggle("is-hidden", state.settingsView !== "general");
   els.settingsGuideView.classList.toggle("is-hidden", state.settingsView !== "guide");
   els.settingsAboutView.classList.toggle("is-hidden", state.settingsView !== "about");
+  if (els.silentKeepAliveToggle) {
+    els.silentKeepAliveToggle.checked = state.silentKeepAliveEnabled;
+  }
+  if (els.enhancedSilentKeepAliveToggle) {
+    els.enhancedSilentKeepAliveToggle.checked = state.enhancedSilentKeepAliveEnabled;
+    els.enhancedSilentKeepAliveToggle.disabled = !state.silentKeepAliveEnabled;
+  }
   refreshScrollFades();
 }
 
@@ -1309,10 +1485,14 @@ async function handleSpaceKey() {
 
 function bindEvents() {
   markForegroundActive();
-  window.addEventListener("focus", markForegroundActive);
+  window.addEventListener("focus", () => {
+    markForegroundActive();
+    syncSilentKeepAlive().catch(console.error);
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       markForegroundActive();
+      syncSilentKeepAlive().catch(console.error);
     }
   });
 
@@ -1396,6 +1576,35 @@ function bindEvents() {
     await applyBatchSize(els.batchSizeSelect.value, { reload: true });
   });
 
+  els.silentKeepAliveToggle?.addEventListener("change", async () => {
+    state.silentKeepAliveEnabled = els.silentKeepAliveToggle.checked;
+    if (!state.silentKeepAliveEnabled) {
+      state.enhancedSilentKeepAliveEnabled = false;
+      localStorage.setItem(STORAGE_KEYS.enhancedSilentKeepAlive, "false");
+    }
+    localStorage.setItem(
+      STORAGE_KEYS.silentKeepAlive,
+      String(state.silentKeepAliveEnabled)
+    );
+    await syncSilentKeepAlive();
+    renderSettingsView();
+  });
+
+  els.enhancedSilentKeepAliveToggle?.addEventListener("change", async () => {
+    if (!state.silentKeepAliveEnabled) {
+      els.enhancedSilentKeepAliveToggle.checked = false;
+      return;
+    }
+
+    state.enhancedSilentKeepAliveEnabled = els.enhancedSilentKeepAliveToggle.checked;
+    localStorage.setItem(
+      STORAGE_KEYS.enhancedSilentKeepAlive,
+      String(state.enhancedSilentKeepAliveEnabled)
+    );
+    await syncSilentKeepAlive();
+    renderSettingsView();
+  });
+
   document.querySelectorAll("[data-close]").forEach((button) => {
     button.addEventListener("click", () => {
       const target = button.dataset.close;
@@ -1470,7 +1679,10 @@ function bindEvents() {
     });
   }
 
-  window.addEventListener("beforeunload", persistSession);
+  window.addEventListener("beforeunload", () => {
+    persistSession();
+    stopSilentKeepAlive({ close: true }).catch(console.error);
+  });
 }
 
 async function init() {
@@ -1478,6 +1690,9 @@ async function init() {
 
   state.dailyPlan = readStoredNumber(STORAGE_KEYS.dailyPlan, DEFAULT_DAILY_PLAN, normalizeDailyPlan);
   state.batchSize = readStoredNumber(STORAGE_KEYS.batchSize, DEFAULT_BATCH_SIZE, normalizeBatchSize);
+  state.silentKeepAliveEnabled = readStoredBoolean(STORAGE_KEYS.silentKeepAlive, false);
+  state.enhancedSilentKeepAliveEnabled = state.silentKeepAliveEnabled
+    && readStoredBoolean(STORAGE_KEYS.enhancedSilentKeepAlive, false);
 
   applyTheme(savedTheme === "light" ? "light" : "dark");
   applyDailyPlan(state.dailyPlan);
@@ -1500,6 +1715,7 @@ async function init() {
     ]);
     await requestNative("showWindow");
     state.allowAutoplay = true;
+    await syncSilentKeepAlive();
     if (state.viewMode === "study") {
       scheduleAutoplay();
     }

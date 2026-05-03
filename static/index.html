@@ -11,7 +11,7 @@
     <div class="page-frame">
       <header class="topbar">
         <div>
-          <p class="eyebrow">ENGRAM 1.1.1</p>
+          <p class="eyebrow">ENGRAM 1.1.2</p>
           <h1>Engram——记忆印迹</h1>
         </div>
         <div class="topbar-actions">
@@ -241,6 +241,35 @@
               </label>
             </div>
             <p class="settings-help" id="dailyPlanHint">今日已新学 0 / 计划 30，仍可继续新学。</p>
+          </section>
+
+          <section class="settings-group">
+            <h3>音频设置</h3>
+            <div class="toggle-panel">
+              <div class="toggle-card">
+                <span class="toggle-copy">
+                  <span class="toggle-title">静音保活</span>
+                  <span class="toggle-description">持续维持静音音频输出，改善Windows播放首音被吞的问题。</span>
+                </span>
+                <label class="toggle-switch" for="silentKeepAliveToggle" aria-label="静音保活">
+                  <input id="silentKeepAliveToggle" type="checkbox">
+                  <span class="toggle-slider" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <div class="toggle-card">
+                <span class="toggle-copy">
+                  <span class="toggle-title">增强静音保活</span>
+                  <span class="toggle-description">持续维持静音音频输出，增强改善蓝牙耳机首音被吞的问题。</span>
+                </span>
+                <label class="toggle-switch" for="enhancedSilentKeepAliveToggle" aria-label="增强静音保活">
+                  <input id="enhancedSilentKeepAliveToggle" type="checkbox">
+                  <span class="toggle-slider" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <p class="toggle-note">开启后可能略微增加设备功耗，修改后重启生效。</p>
+            </div>
           </section>
         </div>
 
