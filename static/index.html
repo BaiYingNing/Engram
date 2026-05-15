@@ -11,7 +11,7 @@
     <div class="page-frame">
       <header class="topbar">
         <div>
-          <p class="eyebrow">ENGRAM 1.1.2</p>
+          <p class="eyebrow">ENGRAM 1.1.3</p>
           <h1>Engram——记忆印迹</h1>
         </div>
         <div class="topbar-actions">
@@ -211,6 +211,34 @@
         <div class="settings-panels">
         <div id="settingsGeneralView">
           <section class="settings-group">
+            <h3>词书与数据</h3>
+            <div class="settings-grid">
+              <label class="setting-field">
+                <span>当前词书</span>
+                <div class="custom-select" data-select="book">
+                  <button id="bookSelectButton" class="select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="bookSelectLabel">选择词书</span>
+                    <span class="select-trigger-icon" aria-hidden="true"></span>
+                  </button>
+                  <div id="bookSelectMenu" class="select-menu hidden" role="listbox" aria-label="当前词书"></div>
+                </div>
+              </label>
+              <div class="setting-field">
+                <span>词书状态</span>
+                <div class="info-card">
+                  <strong id="bookStatusTitle">-</strong>
+                  <small id="bookStatusMeta">-</small>
+                </div>
+              </div>
+            </div>
+            <div class="settings-actions">
+              <button id="exportDataButton" class="ghost-button" type="button">导出学习数据</button>
+              <button id="importDataButton" class="ghost-button" type="button">导入学习数据</button>
+            </div>
+            <p class="settings-help" id="dataActionHint">切换词书后会自动刷新当前学习批次，导入前建议先备份一次。</p>
+          </section>
+
+          <section class="settings-group">
             <h3>默认发音</h3>
             <p class="settings-help compact-help">当前版本暂不可选</p>
             <div class="segmented" id="accentSwitch">
@@ -228,16 +256,13 @@
               </label>
               <label class="setting-field">
                 <span>每组词数</span>
-                <span class="select-shell">
-                  <select id="batchSizeSelect" class="select-field">
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                    <option value="15">15</option>
-                    <option value="20">20</option>
-                    <option value="25">25</option>
-                    <option value="30" selected>30</option>
-                  </select>
-                </span>
+                <div class="custom-select" data-select="batch-size">
+                  <button id="batchSizeSelectButton" class="select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="batchSizeSelectLabel">30</span>
+                    <span class="select-trigger-icon" aria-hidden="true"></span>
+                  </button>
+                  <div id="batchSizeSelectMenu" class="select-menu hidden" role="listbox" aria-label="每组词数"></div>
+                </div>
               </label>
             </div>
             <p class="settings-help" id="dailyPlanHint">今日已新学 0 / 计划 30，仍可继续新学。</p>

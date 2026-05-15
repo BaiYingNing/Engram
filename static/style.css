@@ -811,6 +811,37 @@ code {
   font-size: 14px;
 }
 
+.info-card {
+  display: grid;
+  gap: 6px;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-surface);
+}
+
+.info-card strong {
+  color: var(--text-main);
+  font-size: 15px;
+}
+
+.info-card small {
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+#dataActionHint {
+  display: none;
+}
+
 .toggle-panel {
   display: grid;
   gap: 14px;
@@ -904,43 +935,150 @@ code {
   opacity: 0.45;
 }
 
-.number-field,
-.select-field {
+.number-field {
   min-height: 46px;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: var(--panel-surface);
+  background: linear-gradient(180deg, rgba(148, 214, 255, 0.08), rgba(148, 214, 255, 0.02));
   color: var(--text-main);
-  padding: 0 14px;
+  padding: 0 16px;
   outline: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.select-shell {
+.custom-select {
   position: relative;
-  display: block;
+  display: grid;
+  isolation: isolate;
+  z-index: 2;
 }
 
-.select-shell::after {
-  content: "⌄";
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-48%);
-  color: var(--text-faint);
-  pointer-events: none;
-  font-size: 16px;
-}
-
-.select-field {
+.select-trigger {
   width: 100%;
-  appearance: none;
-  padding-right: 40px;
-  background-image: linear-gradient(180deg, rgba(148, 214, 255, 0.04), rgba(148, 214, 255, 0));
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(148, 214, 255, 0.08), rgba(148, 214, 255, 0.02));
+  color: var(--text-main);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.select-trigger span:first-child {
+  line-height: 1.2;
+}
+
+.select-trigger-icon {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--text-soft) 88%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--text-soft) 88%, transparent);
+  transform: translateY(-1px) rotate(45deg);
+  opacity: 0.9;
+  transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease;
 }
 
 .number-field:focus,
-.select-field:focus {
+.select-trigger:focus-visible {
   border-color: var(--primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 4px rgba(37, 127, 204, 0.12);
+  background: linear-gradient(180deg, rgba(148, 214, 255, 0.12), rgba(148, 214, 255, 0.04));
+}
+
+.select-trigger:hover {
+  background: linear-gradient(180deg, rgba(148, 214, 255, 0.1), rgba(148, 214, 255, 0.03));
+}
+
+.custom-select.is-open .select-trigger {
+  border-color: var(--primary);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 4px rgba(37, 127, 204, 0.12);
+  background: linear-gradient(180deg, rgba(148, 214, 255, 0.12), rgba(148, 214, 255, 0.04));
+  position: relative;
+  z-index: 121;
+}
+
+.custom-select.is-open .select-trigger-icon {
+  transform: translateY(1px) rotate(225deg);
+  border-color: var(--primary);
+}
+
+.select-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-panel-strong), var(--bg-panel));
+  backdrop-filter: blur(18px);
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.18);
+  pointer-events: auto;
+}
+
+.select-option {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.select-option:hover,
+.select-option:focus-visible {
+  background: rgba(148, 214, 255, 0.12);
+  border-color: rgba(37, 127, 204, 0.16);
+  outline: none;
+}
+
+.select-option.is-selected {
+  background: rgba(37, 127, 204, 0.14);
+  border-color: rgba(37, 127, 204, 0.24);
+  font-weight: 700;
+}
+
+.select-option-check {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(37, 127, 204, 0.16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  font-size: 10px;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.select-option.is-selected .select-option-check {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .about-panel {

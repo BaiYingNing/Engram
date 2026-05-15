@@ -1,0 +1,11 @@
+{
+  "bookKey": "CET4",
+  "title": "\u5927\u5b66\u82f1\u8bed\u56db\u7ea7",
+  "description": "CET4 \u6838\u5fc3\u8bcd\u6c47",
+  "version": "1.0.0",
+  "files": [
+    "CET4_1.json",
+    "CET4_2.json",
+    "CET4_3.json"
+  ]
+}

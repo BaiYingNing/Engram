@@ -36,6 +36,10 @@ function resolveGuidePath() {
   return path.join(resolveAppRoot(), "docs", "guide.md");
 }
 
+function resolveBackupDir() {
+  return path.join(app.getPath("documents"), "Engram Backups");
+}
+
 function loadWindowState() {
   const defaults = {
     width: 1320,
@@ -90,6 +94,9 @@ function setupIpc() {
   ipcMain.handle("engram:get-study-activity", () => store.getStudyActivity());
   ipcMain.handle("engram:get-today-tasks", (_event, limit) => store.getTodayTasks(limit));
   ipcMain.handle("engram:get-due-projection", (_event, days) => store.getDueProjection(days));
+  ipcMain.handle("engram:list-books", () => store.listBooks());
+  ipcMain.handle("engram:get-current-book", () => store.getCurrentBook());
+  ipcMain.handle("engram:switch-book", (_event, bookKey) => store.switchBook(bookKey));
   ipcMain.handle("engram:get-about-content", () => fs.readFileSync(resolveAboutPath(), "utf8"));
   ipcMain.handle("engram:get-guide-content", () => fs.readFileSync(resolveGuidePath(), "utf8"));
   ipcMain.handle("engram:get-window-state", () => ({
@@ -120,6 +127,57 @@ function setupIpc() {
       dialog.showErrorBox("更新学习状态失败", String(error.message || error));
       throw error;
     }
+  });
+  ipcMain.handle("engram:export-data", async () => {
+    const defaultDir = resolveBackupDir();
+    fs.mkdirSync(defaultDir, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/:/g, "-").replace(/\..+$/, "");
+    const defaultPath = path.join(defaultDir, `engram-backup-${timestamp}.json`);
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出学习数据",
+      defaultPath,
+      filters: [
+        { name: "Engram Backup", extensions: ["json"] }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+
+    const payload = store.exportData(app.getVersion());
+    fs.writeFileSync(result.filePath, JSON.stringify(payload, null, 2), "utf8");
+
+    return {
+      canceled: false,
+      filePath: result.filePath
+    };
+  });
+  ipcMain.handle("engram:import-data", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "导入学习数据",
+      properties: ["openFile"],
+      filters: [
+        { name: "Engram Backup", extensions: ["json"] },
+        { name: "JSON", extensions: ["json"] }
+      ]
+    });
+
+    if (result.canceled || !result.filePaths?.length) {
+      return { canceled: true };
+    }
+
+    const filePath = result.filePaths[0];
+    const raw = fs.readFileSync(filePath, "utf8");
+    const payload = JSON.parse(raw);
+    const summary = store.importData(payload);
+
+    return {
+      canceled: false,
+      filePath,
+      ...summary
+    };
   });
   ipcMain.handle("engram:get-app-info", () => ({
     version: app.getVersion(),

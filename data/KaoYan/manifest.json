@@ -1,0 +1,11 @@
+{
+  "bookKey": "KaoYan",
+  "title": "\u8003\u7814\u8bcd\u6c47",
+  "description": "\u8003\u7814\u82f1\u8bed\u6838\u5fc3\u8bcd\u6c47",
+  "version": "1.0.0",
+  "files": [
+    "KaoYan_1.json",
+    "KaoYan_2.json",
+    "KaoYan_3.json"
+  ]
+}

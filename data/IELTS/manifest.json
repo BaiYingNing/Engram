@@ -1,0 +1,10 @@
+{
+  "bookKey": "IELTS",
+  "title": "\u96c5\u601d\u8bcd\u6c47",
+  "description": "IELTS \u6838\u5fc3\u8bcd\u6c47",
+  "version": "1.0.0",
+  "files": [
+    "IELTS_2.json",
+    "IELTS_3.json"
+  ]
+}

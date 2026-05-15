@@ -20,6 +20,9 @@ const state = {
   answeredCount: 0,
   voices: [],
   accent: "uk",
+  books: [],
+  currentBook: null,
+  openSelect: null,
   studyActivity: [],
   stats: null,
   dueProjection: [],
@@ -32,6 +35,7 @@ const state = {
   settingsView: "general",
   isFullScreen: false,
   viewMode: "study",
+  dataActionMessage: "",
   allowAutoplay: false,
   silentKeepAliveEnabled: false,
   enhancedSilentKeepAliveEnabled: false,
@@ -109,11 +113,23 @@ const els = {
   settingsGeneralView: document.getElementById("settingsGeneralView"),
   settingsGuideView: document.getElementById("settingsGuideView"),
   settingsAboutView: document.getElementById("settingsAboutView"),
+  bookSelect: document.getElementById("bookSelect"),
+  bookSelectButton: document.getElementById("bookSelectButton"),
+  bookSelectLabel: document.getElementById("bookSelectLabel"),
+  bookSelectMenu: document.getElementById("bookSelectMenu"),
+  bookStatusTitle: document.getElementById("bookStatusTitle"),
+  bookStatusMeta: document.getElementById("bookStatusMeta"),
+  exportDataButton: document.getElementById("exportDataButton"),
+  importDataButton: document.getElementById("importDataButton"),
+  dataActionHint: document.getElementById("dataActionHint"),
   aboutContent: document.getElementById("aboutContent"),
   guideContent: document.getElementById("guideContent"),
   dailyPlanInput: document.getElementById("dailyPlanInput"),
   dailyPlanHint: document.getElementById("dailyPlanHint"),
   batchSizeSelect: document.getElementById("batchSizeSelect"),
+  batchSizeSelectButton: document.getElementById("batchSizeSelectButton"),
+  batchSizeSelectLabel: document.getElementById("batchSizeSelectLabel"),
+  batchSizeSelectMenu: document.getElementById("batchSizeSelectMenu"),
   silentKeepAliveToggle: document.getElementById("silentKeepAliveToggle"),
   enhancedSilentKeepAliveToggle: document.getElementById("enhancedSilentKeepAliveToggle")
 };
@@ -263,11 +279,17 @@ function requestNative(method, ...args) {
   return window.engramAPI[method](...args);
 }
 
+function getSessionStorageKey() {
+  const bookKey = state.currentBook?.key || state.stats?.current_book || "default";
+  return `${STORAGE_KEYS.session}:${bookKey}`;
+}
+
 function clearSavedSession() {
-  localStorage.removeItem(STORAGE_KEYS.session);
+  localStorage.removeItem(getSessionStorageKey());
 }
 
 function clearAutoplayTimer() {
+
   if (state.autoplayTimer) {
     window.clearTimeout(state.autoplayTimer);
     state.autoplayTimer = null;
@@ -279,13 +301,14 @@ function markForegroundActive() {
 }
 
 function persistSession() {
+  const sessionKey = getSessionStorageKey();
   if (state.viewMode === "batch-complete" || state.viewMode === "idle-next-batch") {
     const payload = {
       date: getTodayKey(),
       batchSize: state.batchSize,
       mode: "ready-next-batch"
     };
-    localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(payload));
+    localStorage.setItem(sessionKey, JSON.stringify(payload));
     return;
   }
 
@@ -297,17 +320,19 @@ function persistSession() {
   const payload = {
     date: getTodayKey(),
     batchSize: state.batchSize,
+    bookKey: state.currentBook?.key || null,
     mode: "study",
     index: state.index,
     answeredCount: state.answeredCount,
     tasks: state.tasks
   };
 
-  localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(payload));
+  localStorage.setItem(sessionKey, JSON.stringify(payload));
 }
 
 function restoreSavedSession() {
-  const raw = localStorage.getItem(STORAGE_KEYS.session);
+
+  const raw = localStorage.getItem(getSessionStorageKey());
   if (!raw) {
     return false;
   }
@@ -431,12 +456,15 @@ function applyDailyPlan(value) {
   state.dailyPlan = normalizeDailyPlan(value);
   localStorage.setItem(STORAGE_KEYS.dailyPlan, String(state.dailyPlan));
   updateDailyPlanPresentation();
+  renderBookStatus();
 }
 
 async function applyBatchSize(value, { reload = false, resetSession = true } = {}) {
   state.batchSize = normalizeBatchSize(value);
   localStorage.setItem(STORAGE_KEYS.batchSize, String(state.batchSize));
-  els.batchSizeSelect.value = String(state.batchSize);
+  if (els.batchSizeSelectLabel) {
+    els.batchSizeSelectLabel.textContent = String(state.batchSize);
+  }
   if (resetSession) {
     clearSavedSession();
   }
@@ -468,17 +496,148 @@ async function syncWindowState() {
   renderFullScreenButton();
 }
 
+function setDataActionMessage(message) {
+  state.dataActionMessage = String(message || "").trim();
+  if (els.dataActionHint) {
+    els.dataActionHint.textContent = state.dataActionMessage || "切换词书后会自动刷新当前学习批次，导入前建议先备份一次。";
+  }
+}
+
+function closeCustomSelect(name = null) {
+  const selectors = name ? [name] : ["book", "batch-size"];
+  selectors.forEach((key) => {
+    const root = document.querySelector(
+      key === "book" ? `[data-select="book"]` : `[data-select="batch-size"]`
+    );
+    const button = key === "book" ? els.bookSelectButton : els.batchSizeSelectButton;
+    const menu = key === "book" ? els.bookSelectMenu : els.batchSizeSelectMenu;
+    root?.classList.remove("is-open");
+    button?.setAttribute("aria-expanded", "false");
+    menu?.classList.add("hidden");
+  });
+
+  if (!name || state.openSelect === name) {
+    state.openSelect = null;
+  }
+}
+
+function openCustomSelect(name) {
+  closeCustomSelect();
+  const root = document.querySelector(
+    name === "book" ? `[data-select="book"]` : `[data-select="batch-size"]`
+  );
+  const button = name === "book" ? els.bookSelectButton : els.batchSizeSelectButton;
+  const menu = name === "book" ? els.bookSelectMenu : els.batchSizeSelectMenu;
+  root?.classList.add("is-open");
+  button?.setAttribute("aria-expanded", "true");
+  menu?.classList.remove("hidden");
+  state.openSelect = name;
+}
+
+function toggleCustomSelect(name) {
+  if (state.openSelect === name) {
+    closeCustomSelect(name);
+    return;
+  }
+  openCustomSelect(name);
+}
+
+function buildSelectOption({ label, selected, onClick }) {
+  const button = document.createElement("button");
+  button.className = "select-option" + (selected ? " is-selected" : "");
+  button.type = "button";
+  button.innerHTML = `
+    <span>${label}</span>
+    <span class="select-option-check" aria-hidden="true">✓</span>
+  `;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function renderBookOptions() {
+  if (!els.bookSelectMenu || !els.bookSelectLabel) {
+    return;
+  }
+
+  els.bookSelectMenu.innerHTML = "";
+  state.books.forEach((book) => {
+    const option = buildSelectOption({
+      label: `${book.title} (${book.key})`,
+      selected: book.key === state.currentBook?.key,
+      onClick: async () => {
+        closeCustomSelect("book");
+        await switchCurrentBook(book.key);
+      }
+    });
+    els.bookSelectMenu.appendChild(option);
+  });
+
+  if (state.currentBook?.key) {
+    els.bookSelectLabel.textContent = `${state.currentBook.title} (${state.currentBook.key})`;
+  }
+}
+
+function renderBatchSizeOptions() {
+  if (!els.batchSizeSelectMenu || !els.batchSizeSelectLabel) {
+    return;
+  }
+
+  els.batchSizeSelectMenu.innerHTML = "";
+  BATCH_SIZE_OPTIONS.forEach((size) => {
+    const option = buildSelectOption({
+      label: `${size}`,
+      selected: size === state.batchSize,
+      onClick: async () => {
+        closeCustomSelect("batch-size");
+        await applyBatchSize(size, { reload: true });
+        renderBatchSizeOptions();
+      }
+    });
+    els.batchSizeSelectMenu.appendChild(option);
+  });
+
+  els.batchSizeSelectLabel.textContent = String(state.batchSize);
+}
+
+function renderBookStatus() {
+  if (!els.bookStatusTitle || !els.bookStatusMeta) {
+    return;
+  }
+
+  if (!state.currentBook) {
+    els.bookStatusTitle.textContent = "未加载词书";
+    els.bookStatusMeta.textContent = "-";
+    return;
+  }
+
+  els.bookStatusTitle.textContent = `${state.currentBook.title} (${state.currentBook.key})`;
+  const learned = state.currentBook.learned_words || 0;
+  const total = state.currentBook.total_words || 0;
+  const remaining = Math.max(total - learned, 0);
+  els.bookStatusMeta.textContent = `已学习 ${learned} / 总词数 ${total} / 未学 ${remaining}`;
+}
+
+async function loadBooks() {
+  state.books = await requestNative("listBooks");
+  state.currentBook = await requestNative("getCurrentBook");
+  renderBookOptions();
+  renderBookStatus();
+}
+
 async function loadStats() {
   const stats = await requestNative("getStats");
   state.stats = stats;
-  els.currentBook.textContent = stats.current_book || "CET6";
+  els.currentBook.textContent = (
+    stats.current_book === "CET4" || stats.current_book === "CET6"
+  )
+    ? stats.current_book
+    : (stats.current_book_title || stats.current_book || "CET6");
   els.currentBookMeta.textContent = `剩余 ${stats.new_words} / 总数 ${stats.total_words}`;
   els.learnedWords.textContent = stats.learned_words;
   els.dueWords.textContent = stats.due_words;
   els.learnedWordsTotal.textContent = stats.learned_words_total;
   updateDailyPlanPresentation();
 }
-
 async function loadStudyActivity() {
   state.studyActivity = await requestNative("getStudyActivity");
   if (!state.studyActivity.length) {
@@ -1400,6 +1559,68 @@ function renderStats() {
   refreshScrollFades();
 }
 
+async function switchCurrentBook(bookKey) {
+  const nextKey = String(bookKey || "").toUpperCase();
+  if (!nextKey || nextKey === state.currentBook?.key) {
+    renderBookOptions();
+    return;
+  }
+
+  await requestNative("switchBook", nextKey);
+  clearSavedSession();
+  await Promise.all([
+    loadBooks(),
+    loadStats(),
+    loadStudyActivity(),
+    loadDueProjection(),
+    loadTasks({ forceFresh: true })
+  ]);
+  setDataActionMessage(`已切换到 ${state.currentBook?.title || nextKey}。`);
+  if (!els.statsModal.classList.contains("hidden")) {
+    renderStats();
+  }
+  renderSettingsView();
+}
+
+async function handleExportData() {
+  const result = await requestNative("exportData");
+  if (result?.canceled) {
+    setDataActionMessage("已取消导出。");
+    renderSettingsView();
+    return;
+  }
+  setDataActionMessage(`学习数据已导出到 ${result.filePath}`);
+  renderSettingsView();
+}
+
+async function handleImportData() {
+  const confirmed = window.confirm("导入会覆盖当前学习数据，建议先导出备份。要继续吗？");
+  if (!confirmed) {
+    return;
+  }
+
+  const result = await requestNative("importData");
+  if (result?.canceled) {
+    setDataActionMessage("已取消导入。");
+    renderSettingsView();
+    return;
+  }
+
+  clearSavedSession();
+  await Promise.all([
+    loadBooks(),
+    loadStats(),
+    loadStudyActivity(),
+    loadDueProjection(),
+    loadTasks({ forceFresh: true })
+  ]);
+  setDataActionMessage(`学习数据已从 ${result.filePath} 导入。`);
+  if (!els.statsModal.classList.contains("hidden")) {
+    renderStats();
+  }
+  renderSettingsView();
+}
+
 function renderSettingsView() {
   document.querySelectorAll("[data-settings-view]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.settingsView === state.settingsView);
@@ -1415,6 +1636,10 @@ function renderSettingsView() {
     els.enhancedSilentKeepAliveToggle.checked = state.enhancedSilentKeepAliveEnabled;
     els.enhancedSilentKeepAliveToggle.disabled = !state.silentKeepAliveEnabled;
   }
+  renderBookOptions();
+  renderBatchSizeOptions();
+  renderBookStatus();
+  setDataActionMessage(state.dataActionMessage);
   refreshScrollFades();
 }
 
@@ -1572,8 +1797,42 @@ function bindEvents() {
     applyDailyPlan(els.dailyPlanInput.value);
   });
 
-  els.batchSizeSelect.addEventListener("change", async () => {
-    await applyBatchSize(els.batchSizeSelect.value, { reload: true });
+  els.batchSizeSelectButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleCustomSelect("batch-size");
+  });
+
+  els.bookSelectButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleCustomSelect("book");
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      closeCustomSelect();
+      return;
+    }
+
+    if (!target.closest(".custom-select")) {
+      closeCustomSelect();
+    }
+  });
+
+  els.exportDataButton?.addEventListener("click", async () => {
+    try {
+      await handleExportData();
+    } catch (error) {
+      console.error(error);
+    }
+  });
+
+  els.importDataButton?.addEventListener("click", async () => {
+    try {
+      await handleImportData();
+    } catch (error) {
+      console.error(error);
+    }
   });
 
   els.silentKeepAliveToggle?.addEventListener("change", async () => {
@@ -1618,6 +1877,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", async (event) => {
     if (event.key === "Escape") {
+      closeCustomSelect();
       closeModal(els.statsModal);
       closeModal(els.settingsModal);
       return;
@@ -1708,6 +1968,9 @@ async function init() {
       syncWindowState(),
       loadAboutContent(),
       loadGuideContent(),
+      loadBooks()
+    ]);
+    await Promise.all([
       loadStats(),
       loadStudyActivity(),
       loadDueProjection(),
