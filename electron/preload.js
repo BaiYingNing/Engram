@@ -2,10 +2,10 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("engramAPI", {
   getAppInfo: () => ipcRenderer.invoke("engram:get-app-info"),
-  getStats: () => ipcRenderer.invoke("engram:get-stats"),
-  getStudyActivity: () => ipcRenderer.invoke("engram:get-study-activity"),
+  getStats: (dayStartHour) => ipcRenderer.invoke("engram:get-stats", dayStartHour),
+  getStudyActivity: (dayStartHour) => ipcRenderer.invoke("engram:get-study-activity", dayStartHour),
   getTodayTasks: (limit) => ipcRenderer.invoke("engram:get-today-tasks", limit),
-  getDueProjection: (days) => ipcRenderer.invoke("engram:get-due-projection", days),
+  getDueProjection: (days, dayStartHour) => ipcRenderer.invoke("engram:get-due-projection", days, dayStartHour),
   listBooks: () => ipcRenderer.invoke("engram:list-books"),
   getCurrentBook: () => ipcRenderer.invoke("engram:get-current-book"),
   switchBook: (bookKey) => ipcRenderer.invoke("engram:switch-book", bookKey),

@@ -11,7 +11,7 @@
     <div class="page-frame">
       <header class="topbar">
         <div>
-          <p class="eyebrow">ENGRAM 1.1.3</p>
+          <p class="eyebrow">ENGRAM 1.2.0</p>
           <h1>Engram——记忆印迹</h1>
         </div>
         <div class="topbar-actions">
@@ -69,20 +69,23 @@
 
           <div class="word-core">
             <h2 id="wordText">准备中...</h2>
-            <div class="word-core-actions">
-              <button id="speakButton" class="ghost-button" type="button">播放</button>
-              <span class="status-chip" id="reviewStatus">未作答</span>
-            </div>
           </div>
 
           <div class="answer-scroll scroll-fade" data-scroll-fade id="answerScroll">
             <div class="answer-placeholder" id="answerPlaceholder">释义将在显示答案或评分后出现</div>
             <div class="answer-content is-hidden" id="answerContent">
               <p class="phonetic-line">
-                <span id="phoneticUk"></span>
-                <span id="phoneticUs"></span>
+                <span class="phonetic-item">
+                  <button id="speakUkButton" class="phonetic-audio-button" type="button" aria-label="播放英式发音" title="播放英式发音">🔊</button>
+                  <span id="phoneticUk"></span>
+                </span>
+                <span class="phonetic-item">
+                  <button id="speakUsButton" class="phonetic-audio-button" type="button" aria-label="播放美式发音" title="播放美式发音">🔊</button>
+                  <span id="phoneticUs"></span>
+                </span>
               </p>
               <div class="meanings-list" id="meaningsList"></div>
+              <div class="examples-block" id="examplesBlock"></div>
             </div>
           </div>
 
@@ -240,16 +243,25 @@
 
           <section class="settings-group">
             <h3>默认发音</h3>
-            <p class="settings-help compact-help">当前版本暂不可选</p>
             <div class="segmented" id="accentSwitch">
-              <button class="segment" data-accent="uk" type="button" disabled>英式发音</button>
-              <button class="segment" data-accent="us" type="button" disabled>美式发音</button>
+              <button class="segment" data-accent="uk" type="button">英式发音</button>
+              <button class="segment" data-accent="us" type="button">美式发音</button>
             </div>
           </section>
 
           <section class="settings-group">
             <h3>学习计划</h3>
             <div class="settings-grid">
+              <label class="setting-field">
+                <span>学习日刷新时间</span>
+                <div class="custom-select" data-select="day-start">
+                  <button id="dayStartSelectButton" class="select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="dayStartSelectLabel">每日 0:00</span>
+                    <span class="select-trigger-icon" aria-hidden="true"></span>
+                  </button>
+                  <div id="dayStartSelectMenu" class="select-menu hidden" role="listbox" aria-label="学习日刷新时间"></div>
+                </div>
+              </label>
               <label class="setting-field">
                 <span>每日计划新词数</span>
                 <input id="dailyPlanInput" class="number-field" type="number" min="0" max="500" step="5" value="30">

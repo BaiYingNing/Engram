@@ -13,7 +13,9 @@ const INTERVALS_MS = [
 
 const APP_META_CURRENT_BOOK_KEY = "current_book_key";
 const APP_META_SCHEMA_VERSION = "schema_version";
-const SCHEMA_VERSION = 2;
+const APP_META_METADATA_SYNC_VERSION = "metadata_sync_version";
+const SCHEMA_VERSION = 3;
+const METADATA_SYNC_VERSION = 2;
 
 const BUILTIN_BOOK_TITLES = {
   CET4: "\u5927\u5b66\u82f1\u8bed\u56db\u7ea7",
@@ -70,10 +72,49 @@ function mergeMeanings(target, source) {
   }));
 }
 
+function mergeExamples(target, source) {
+  const seen = new Set();
+  const merged = [];
+
+  [...(target || []), ...(source || [])].forEach((entry) => {
+    const english = String(entry?.english || "").trim();
+    const chinese = String(entry?.chinese || "").trim();
+    const speech = String(entry?.speech || "").trim();
+    if (!english) {
+      return;
+    }
+
+    const key = `${english}\n${chinese}`.toLowerCase();
+    if (seen.has(key)) {
+      if (speech) {
+        const existing = merged.find((item) => `${item.english}\n${item.chinese}`.toLowerCase() === key);
+        if (existing && !existing.speech) {
+          existing.speech = speech;
+        }
+      }
+      return;
+    }
+
+    seen.add(key);
+    merged.push({ english, chinese, speech });
+  });
+
+  return merged;
+}
+
 function buildTranslationSummary(meanings) {
   return meanings
     .map((entry) => `${entry.pos} ${entry.definitions.join("；")}`.trim())
     .join(" / ");
+}
+
+function extractExamples(content) {
+  const sentences = content?.sentence?.sentences || [];
+  return mergeExamples([], sentences.map((entry) => ({
+    english: entry.sContent || entry.sContent_eng || "",
+    chinese: entry.sCn || "",
+    speech: entry.sSpeech || ""
+  })));
 }
 
 function extractRecord(item, bookKey) {
@@ -103,6 +144,9 @@ function extractRecord(item, bookKey) {
     source_book_id: String(item?.bookId || "").trim(),
     phonetic_uk: content.ukphone || "",
     phonetic_us: content.usphone || "",
+    speech_uk: content.ukspeech || "",
+    speech_us: content.usspeech || "",
+    examples: extractExamples(content),
     meanings,
     translation_summary: buildTranslationSummary(meanings)
   };
@@ -112,7 +156,10 @@ function recordScore(record) {
   return [
     record.phonetic_uk,
     record.phonetic_us,
+    record.speech_uk,
+    record.speech_us,
     record.translation_summary,
+    ...(record.examples || []).map((entry) => entry.english),
     ...(record.meanings || []).flatMap((entry) => entry.definitions || [])
   ].filter(Boolean).length;
 }
@@ -129,6 +176,9 @@ function mergeRecords(baseRecord, nextRecord) {
     source_book_id: preferred.source_book_id || fallback.source_book_id,
     phonetic_uk: preferred.phonetic_uk || fallback.phonetic_uk,
     phonetic_us: preferred.phonetic_us || fallback.phonetic_us,
+    speech_uk: preferred.speech_uk || fallback.speech_uk,
+    speech_us: preferred.speech_us || fallback.speech_us,
+    examples: mergeExamples(baseRecord.examples, nextRecord.examples),
     meanings,
     translation_summary: buildTranslationSummary(meanings)
   };
@@ -249,6 +299,9 @@ function createWordsTable(db) {
       source_book_id TEXT NOT NULL,
       phonetic_uk TEXT DEFAULT '',
       phonetic_us TEXT DEFAULT '',
+      speech_uk TEXT DEFAULT '',
+      speech_us TEXT DEFAULT '',
+      examples_json TEXT DEFAULT '[]',
       meanings_json TEXT NOT NULL,
       translation_summary TEXT DEFAULT '',
       stage INTEGER NOT NULL DEFAULT 0,
@@ -320,8 +373,24 @@ function initializeSchema(db) {
 function ensureRuntimeSchema(db) {
   createBooksTable(db);
   createWordsTable(db);
+  ensureWordsV3Columns(db);
   createReviewLogsTable(db);
   createAppMetaTable(db);
+}
+
+function addColumnIfMissing(db, tableName, columnName, definition) {
+  const columns = new Set(getTableColumns(db, tableName));
+  if (columns.has(columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
+function ensureWordsV3Columns(db) {
+  addColumnIfMissing(db, "words", "speech_uk", "TEXT DEFAULT ''");
+  addColumnIfMissing(db, "words", "speech_us", "TEXT DEFAULT ''");
+  addColumnIfMissing(db, "words", "examples_json", "TEXT DEFAULT '[]'");
 }
 
 function getCurrentBookKey(db) {
@@ -351,12 +420,51 @@ function setSchemaVersion(db, version) {
   `).run(APP_META_SCHEMA_VERSION, String(version));
 }
 
+function getMetadataSyncVersion(db) {
+  if (!hasTable(db, "app_meta")) {
+    return 0;
+  }
+
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = ?").get(APP_META_METADATA_SYNC_VERSION);
+  const version = Number(row?.value);
+  return Number.isFinite(version) ? version : 0;
+}
+
+function setMetadataSyncVersion(db, version) {
+  db.prepare(`
+    INSERT INTO app_meta (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(APP_META_METADATA_SYNC_VERSION, String(version));
+}
+
 function setCurrentBookKey(db, bookKey) {
   db.prepare(`
     INSERT INTO app_meta (key, value)
     VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(APP_META_CURRENT_BOOK_KEY, String(bookKey || "").toUpperCase());
+}
+
+function normalizeDayStartHour(value) {
+  const numeric = Number(value);
+  return numeric === 5 ? 5 : 0;
+}
+
+function getStudyDayStart(date = new Date(), dayStartHour = 0) {
+  const hour = normalizeDayStartHour(dayStartHour);
+  const start = new Date(date);
+  start.setHours(hour, 0, 0, 0);
+  if (date < start) {
+    start.setDate(start.getDate() - 1);
+  }
+  return start;
+}
+
+function addDaysToDate(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 }
 
 function upsertBook(db, book, sourceType = "builtin") {
@@ -376,6 +484,9 @@ function importBookEntries(db, book) {
 
   const existing = db.prepare("SELECT COUNT(*) AS count FROM words WHERE book_key = ?").get(book.key).count;
   if (existing > 0) {
+    if (getMetadataSyncVersion(db) < METADATA_SYNC_VERSION) {
+      syncBookEntryMetadata(db, book);
+    }
     return existing;
   }
 
@@ -389,6 +500,9 @@ function importBookEntries(db, book) {
       source_book_id,
       phonetic_uk,
       phonetic_us,
+      speech_uk,
+      speech_us,
+      examples_json,
       meanings_json,
       translation_summary,
       stage,
@@ -399,7 +513,7 @@ function importBookEntries(db, book) {
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, 0, 0, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, 0, 0, ?, ?)
   `);
 
   entries.forEach((record) => {
@@ -410,6 +524,9 @@ function importBookEntries(db, book) {
       record.source_book_id,
       record.phonetic_uk,
       record.phonetic_us,
+      record.speech_uk,
+      record.speech_us,
+      JSON.stringify(record.examples || []),
       JSON.stringify(record.meanings),
       record.translation_summary,
       now,
@@ -418,6 +535,35 @@ function importBookEntries(db, book) {
   });
 
   return entries.length;
+}
+
+function syncBookEntryMetadata(db, book) {
+  const entries = loadEntriesForBook(book);
+  const now = new Date().toISOString();
+  const update = db.prepare(`
+    UPDATE words
+    SET phonetic_uk = CASE WHEN phonetic_uk IS NULL OR phonetic_uk = '' THEN ? ELSE phonetic_uk END,
+        phonetic_us = CASE WHEN phonetic_us IS NULL OR phonetic_us = '' THEN ? ELSE phonetic_us END,
+        speech_uk = CASE WHEN speech_uk IS NULL OR speech_uk = '' THEN ? ELSE speech_uk END,
+        speech_us = CASE WHEN speech_us IS NULL OR speech_us = '' THEN ? ELSE speech_us END,
+        examples_json = ?,
+        updated_at = ?
+    WHERE book_key = ?
+      AND lower(word) = lower(?)
+  `);
+
+  entries.forEach((record) => {
+    update.run(
+      record.phonetic_uk || "",
+      record.phonetic_us || "",
+      record.speech_uk || "",
+      record.speech_us || "",
+      JSON.stringify(record.examples || []),
+      now,
+      book.key,
+      record.word
+    );
+  });
 }
 
 function buildDatabase({ dbPath, dataDir }) {
@@ -462,6 +608,9 @@ function rowToWord(row) {
     source_book_id: row.source_book_id,
     phonetic_uk: row.phonetic_uk,
     phonetic_us: row.phonetic_us,
+    speech_uk: row.speech_uk || "",
+    speech_us: row.speech_us || "",
+    examples: JSON.parse(row.examples_json || "[]"),
     translation_summary: row.translation_summary,
     meanings: JSON.parse(row.meanings_json || "[]"),
     stage: row.stage,
@@ -500,6 +649,10 @@ function formatLocalDateKey(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatStudyDateKey(date, dayStartHour = 0) {
+  return formatLocalDateKey(getStudyDayStart(date, dayStartHour));
 }
 
 function detectLegacyBookKey(db) {
@@ -577,6 +730,9 @@ function migrateLegacySchemaToV2(db, booksByKey) {
       source_book_id,
       phonetic_uk,
       phonetic_us,
+      speech_uk,
+      speech_us,
+      examples_json,
       meanings_json,
       translation_summary,
       stage,
@@ -587,7 +743,7 @@ function migrateLegacySchemaToV2(db, booksByKey) {
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   legacyWords.forEach((row) => {
@@ -599,6 +755,9 @@ function migrateLegacySchemaToV2(db, booksByKey) {
       row.book_id,
       row.phonetic_uk || "",
       row.phonetic_us || "",
+      "",
+      "",
+      "[]",
       row.meanings_json || "[]",
       row.translation_summary || "",
       Number(row.stage) || 0,
@@ -658,6 +817,10 @@ function inferSchemaVersion(db) {
     return 0;
   }
 
+  if (wordColumns.has("examples_json") && wordColumns.has("speech_uk") && wordColumns.has("speech_us")) {
+    return 3;
+  }
+
   if (wordColumns.has("book_key")) {
     return 2;
   }
@@ -683,21 +846,41 @@ function migrateDatabase(db, booksByKey) {
 
   if (version === 1) {
     migrateLegacySchemaToV2(db, booksByKey);
+    ensureWordsV3Columns(db);
+    setSchemaVersion(db, SCHEMA_VERSION);
+    return SCHEMA_VERSION;
+  }
+
+  if (version === 2) {
+    ensureWordsV3Columns(db);
+    setSchemaVersion(db, SCHEMA_VERSION);
     return SCHEMA_VERSION;
   }
 
   throw new Error(`Unsupported schema version: ${version}`);
 }
 
-function ensureBooksImported(db, books) {
+function importMissingBooks(db, books) {
+  books.forEach((book) => {
+    importBookEntries(db, book);
+  });
+  if (!getCurrentBookKey(db)) {
+    setCurrentBookKey(db, books[0].key);
+  }
+  if (getMetadataSyncVersion(db) < METADATA_SYNC_VERSION) {
+    setMetadataSyncVersion(db, METADATA_SYNC_VERSION);
+  }
+}
+
+function ensureBooksImported(db, books, { useTransaction = true } = {}) {
+  if (!useTransaction) {
+    importMissingBooks(db, books);
+    return;
+  }
+
   db.exec("BEGIN");
   try {
-    books.forEach((book) => {
-      importBookEntries(db, book);
-    });
-    if (!getCurrentBookKey(db)) {
-      setCurrentBookKey(db, books[0].key);
-    }
+    importMissingBooks(db, books);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
@@ -981,8 +1164,12 @@ function createStore({ dbPath, dataDir }) {
       }
     },
 
-    getStats() {
+    getStats(dayStartHour = 0) {
       const currentBookKey = getCurrentBookKey(db);
+      const todayStart = getStudyDayStart(new Date(), dayStartHour);
+      const tomorrowStart = addDaysToDate(todayStart, 1);
+      const todayStartIso = todayStart.toISOString();
+      const tomorrowStartIso = tomorrowStart.toISOString();
       const today = db.prepare(`
         SELECT
           COUNT(DISTINCT CASE WHEN rl.session_type = 'new' THEN rl.word_entry_id END) AS today_new_words,
@@ -991,8 +1178,9 @@ function createStore({ dbPath, dataDir }) {
         FROM review_logs rl
         WHERE rl.book_key = ?
           AND rl.replaced_by_log_id IS NULL
-          AND date(rl.studied_at, 'localtime') = date('now', 'localtime')
-      `).get(currentBookKey);
+          AND rl.studied_at >= ?
+          AND rl.studied_at < ?
+      `).get(currentBookKey, todayStartIso, tomorrowStartIso);
 
       const currentBook = this.getCurrentBook();
       return {
@@ -1008,19 +1196,18 @@ function createStore({ dbPath, dataDir }) {
           WHERE book_key = ?
             AND last_review_at IS NOT NULL
             AND next_review_at IS NOT NULL
-            AND date(next_review_at, 'localtime') <= date('now', 'localtime')
-        `).get(currentBookKey).count,
+            AND next_review_at < ?
+        `).get(currentBookKey, tomorrowStartIso).count,
         mastered_words: db.prepare("SELECT COUNT(*) AS count FROM words WHERE book_key = ? AND stage >= ?").get(currentBookKey, INTERVALS_MS.length - 1).count,
         today_new_words: today.today_new_words || 0,
         today_review_words: today.today_review_words || 0
       };
     },
 
-    getDueProjection(days = 90) {
+    getDueProjection(days = 90, dayStartHour = 0) {
       const currentBookKey = getCurrentBookKey(db);
       const totalDays = Math.min(Math.max(Number(days) || 90, 1), 365);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = getStudyDayStart(new Date(), dayStartHour);
       const result = [];
       const projectionMap = new Map();
       const horizonEnd = new Date(today);
@@ -1047,7 +1234,7 @@ function createStore({ dbPath, dataDir }) {
           return;
         }
 
-        const key = formatLocalDateKey(clampedDate);
+        const key = formatStudyDateKey(clampedDate, dayStartHour);
         projectionMap.set(key, (projectionMap.get(key) || 0) + 1);
       };
 
@@ -1084,8 +1271,10 @@ function createStore({ dbPath, dataDir }) {
       return result;
     },
 
-    getStudyActivity() {
+    getStudyActivity(dayStartHour = 0) {
       const currentBookKey = getCurrentBookKey(db);
+      const hour = normalizeDayStartHour(dayStartHour);
+      const offsetModifier = hour > 0 ? `-${hour} hours` : "0 hours";
       const rows = db.prepare(`
         SELECT
           day AS date,
@@ -1096,14 +1285,14 @@ function createStore({ dbPath, dataDir }) {
           SELECT
             word_entry_id,
             session_type,
-            date(studied_at, 'localtime') AS day
+            date(studied_at, 'localtime', ?) AS day
           FROM review_logs
           WHERE book_key = ?
             AND replaced_by_log_id IS NULL
         )
         GROUP BY day
         ORDER BY day ASC
-      `).all(currentBookKey);
+      `).all(offsetModifier, currentBookKey);
 
       return rows.map((row) => ({
         date: row.date,
@@ -1113,7 +1302,7 @@ function createStore({ dbPath, dataDir }) {
       }));
     },
 
-    exportData(appVersion = "1.1.3") {
+    exportData(appVersion = "1.2.0") {
       return {
         schema_version: SCHEMA_VERSION,
         app_version: appVersion,
@@ -1161,6 +1350,9 @@ function createStore({ dbPath, dataDir }) {
             source_book_id,
             phonetic_uk,
             phonetic_us,
+            speech_uk,
+            speech_us,
+            examples_json,
             meanings_json,
             translation_summary,
             stage,
@@ -1171,7 +1363,7 @@ function createStore({ dbPath, dataDir }) {
             created_at,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         wordsToImport.forEach((row, index) => {
           insertWord.run(
@@ -1182,6 +1374,9 @@ function createStore({ dbPath, dataDir }) {
             row.source_book_id || "",
             row.phonetic_uk || "",
             row.phonetic_us || "",
+            row.speech_uk || "",
+            row.speech_us || "",
+            row.examples_json || "[]",
             row.meanings_json || "[]",
             row.translation_summary || "",
             Number(row.stage) || 0,
@@ -1248,7 +1443,7 @@ function createStore({ dbPath, dataDir }) {
         }
 
         setSchemaVersion(db, Number(payload.schema_version) || SCHEMA_VERSION);
-        ensureBooksImported(db, books);
+        ensureBooksImported(db, books, { useTransaction: false });
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");

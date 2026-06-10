@@ -2,11 +2,17 @@ const DEFAULT_DAILY_PLAN = 30;
 const DEFAULT_BATCH_SIZE = 30;
 const DUE_PROJECTION_DAYS = 120;
 const BATCH_SIZE_OPTIONS = [5, 10, 15, 20, 25, 30];
+const DAY_START_OPTIONS = [
+  { value: 0, label: "每日 0:00" },
+  { value: 5, label: "每日 5:00" }
+];
 const ENHANCED_SILENT_KEEP_ALIVE_GAIN = 0.00005;
 const ENHANCED_SILENT_KEEP_ALIVE_FREQUENCY = 18000;
 
 const STORAGE_KEYS = {
   theme: "engram-theme",
+  accent: "engram-accent",
+  dayStartHour: "engram-day-start-hour",
   dailyPlan: "engram-daily-plan",
   batchSize: "engram-batch-size",
   silentKeepAlive: "engram-silent-keepalive",
@@ -31,6 +37,7 @@ const state = {
   calendarMonthCursor: startOfMonth(new Date()),
   scrollFadeElements: [],
   dailyPlan: DEFAULT_DAILY_PLAN,
+  dayStartHour: 0,
   batchSize: DEFAULT_BATCH_SIZE,
   settingsView: "general",
   isFullScreen: false,
@@ -43,6 +50,7 @@ const state = {
   silentKeepAliveSource: null,
   silentKeepAliveGainNode: null,
   silentKeepAlivePromise: null,
+  currentAudio: null,
   hasPlayedInitialAutoplay: false,
   autoplayTimer: null,
   lastForegroundAt: 0,
@@ -77,7 +85,8 @@ const els = {
   answerContent: document.getElementById("answerContent"),
   revealButton: document.getElementById("revealButton"),
   reviewActions: document.getElementById("reviewActions"),
-  speakButton: document.getElementById("speakButton"),
+  speakUkButton: document.getElementById("speakUkButton"),
+  speakUsButton: document.getElementById("speakUsButton"),
   themeToggle: document.getElementById("themeToggle"),
   statsButton: document.getElementById("statsButton"),
   fullScreenButton: document.getElementById("fullScreenButton"),
@@ -90,7 +99,7 @@ const els = {
   dailyPlanMeta: document.getElementById("dailyPlanMeta"),
   learnedWordsTotal: document.getElementById("learnedWordsTotal"),
   meaningsList: document.getElementById("meaningsList"),
-  reviewStatus: document.getElementById("reviewStatus"),
+  examplesBlock: document.getElementById("examplesBlock"),
   prevButton: document.getElementById("prevButton"),
   nextButton: document.getElementById("nextButton"),
   transitionEyebrow: document.getElementById("transitionEyebrow"),
@@ -130,6 +139,9 @@ const els = {
   batchSizeSelectButton: document.getElementById("batchSizeSelectButton"),
   batchSizeSelectLabel: document.getElementById("batchSizeSelectLabel"),
   batchSizeSelectMenu: document.getElementById("batchSizeSelectMenu"),
+  dayStartSelectButton: document.getElementById("dayStartSelectButton"),
+  dayStartSelectLabel: document.getElementById("dayStartSelectLabel"),
+  dayStartSelectMenu: document.getElementById("dayStartSelectMenu"),
   silentKeepAliveToggle: document.getElementById("silentKeepAliveToggle"),
   enhancedSilentKeepAliveToggle: document.getElementById("enhancedSilentKeepAliveToggle")
 };
@@ -169,6 +181,16 @@ function formatDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
+function getStudyDayStart(date = new Date(), dayStartHour = state.dayStartHour) {
+  const hour = Number(dayStartHour) === 5 ? 5 : 0;
+  const start = new Date(date);
+  start.setHours(hour, 0, 0, 0);
+  if (date < start) {
+    start.setDate(start.getDate() - 1);
+  }
+  return start;
+}
+
 function formatMonthLabel(date) {
   return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
 }
@@ -186,7 +208,7 @@ function formatForecastLabel(dateKey, offset) {
 }
 
 function getTodayKey() {
-  return formatDateKey(new Date());
+  return formatDateKey(getStudyDayStart());
 }
 
 function normalizeDailyPlan(value) {
@@ -200,6 +222,14 @@ function normalizeDailyPlan(value) {
 function normalizeBatchSize(value) {
   const numeric = Number(value);
   return BATCH_SIZE_OPTIONS.includes(numeric) ? numeric : DEFAULT_BATCH_SIZE;
+}
+
+function normalizeDayStartHour(value) {
+  return Number(value) === 5 ? 5 : 0;
+}
+
+function normalizeAccent(value) {
+  return value === "us" ? "us" : "uk";
 }
 
 function readStoredNumber(key, fallback, normalize) {
@@ -268,8 +298,13 @@ function canMoveNext() {
   return state.index < getMaxUnlockedIndex();
 }
 
-function updateSpeakButton(label) {
-  els.speakButton.textContent = label;
+function updateSpeakButton(label, accent = state.accent) {
+  const button = accent === "us" ? els.speakUsButton : els.speakUkButton;
+  if (!button) {
+    return;
+  }
+  button.textContent = "🔊";
+  button.dataset.state = label === "播放中..." ? "playing" : "idle";
 }
 
 function requestNative(method, ...args) {
@@ -474,12 +509,40 @@ async function applyBatchSize(value, { reload = false, resetSession = true } = {
   }
 }
 
+async function applyDayStartHour(value, { reload = false, resetSession = true } = {}) {
+  state.dayStartHour = normalizeDayStartHour(value);
+  localStorage.setItem(STORAGE_KEYS.dayStartHour, String(state.dayStartHour));
+  renderDayStartOptions();
+
+  if (resetSession) {
+    clearSavedSession();
+  }
+
+  if (reload) {
+    await Promise.all([
+      loadStats(),
+      loadStudyActivity(),
+      loadDueProjection(),
+      loadTasks({ forceFresh: true })
+    ]);
+    if (!els.statsModal.classList.contains("hidden")) {
+      renderStats();
+    }
+  }
+}
+
+function applyAccent(value) {
+  state.accent = normalizeAccent(value);
+  localStorage.setItem(STORAGE_KEYS.accent, state.accent);
+  renderAccentState();
+}
+
 function renderAccentState() {
-  state.accent = "uk";
   document.querySelectorAll("[data-accent]").forEach((button) => {
-    button.classList.remove("is-active");
-    button.classList.add("is-disabled");
-    button.disabled = true;
+    const isActive = button.dataset.accent === state.accent;
+    button.classList.toggle("is-active", isActive);
+    button.classList.remove("is-disabled");
+    button.disabled = false;
   });
 }
 
@@ -503,14 +566,32 @@ function setDataActionMessage(message) {
   }
 }
 
+function getCustomSelectParts(name) {
+  const root = document.querySelector(`[data-select="${name}"]`);
+  const parts = {
+    root,
+    button: null,
+    menu: null
+  };
+
+  if (name === "book") {
+    parts.button = els.bookSelectButton;
+    parts.menu = els.bookSelectMenu;
+  } else if (name === "batch-size") {
+    parts.button = els.batchSizeSelectButton;
+    parts.menu = els.batchSizeSelectMenu;
+  } else if (name === "day-start") {
+    parts.button = els.dayStartSelectButton;
+    parts.menu = els.dayStartSelectMenu;
+  }
+
+  return parts;
+}
+
 function closeCustomSelect(name = null) {
-  const selectors = name ? [name] : ["book", "batch-size"];
+  const selectors = name ? [name] : ["book", "batch-size", "day-start"];
   selectors.forEach((key) => {
-    const root = document.querySelector(
-      key === "book" ? `[data-select="book"]` : `[data-select="batch-size"]`
-    );
-    const button = key === "book" ? els.bookSelectButton : els.batchSizeSelectButton;
-    const menu = key === "book" ? els.bookSelectMenu : els.batchSizeSelectMenu;
+    const { root, button, menu } = getCustomSelectParts(key);
     root?.classList.remove("is-open");
     button?.setAttribute("aria-expanded", "false");
     menu?.classList.add("hidden");
@@ -523,11 +604,7 @@ function closeCustomSelect(name = null) {
 
 function openCustomSelect(name) {
   closeCustomSelect();
-  const root = document.querySelector(
-    name === "book" ? `[data-select="book"]` : `[data-select="batch-size"]`
-  );
-  const button = name === "book" ? els.bookSelectButton : els.batchSizeSelectButton;
-  const menu = name === "book" ? els.bookSelectMenu : els.batchSizeSelectMenu;
+  const { root, button, menu } = getCustomSelectParts(name);
   root?.classList.add("is-open");
   button?.setAttribute("aria-expanded", "true");
   menu?.classList.remove("hidden");
@@ -599,6 +676,28 @@ function renderBatchSizeOptions() {
   els.batchSizeSelectLabel.textContent = String(state.batchSize);
 }
 
+function renderDayStartOptions() {
+  if (!els.dayStartSelectMenu || !els.dayStartSelectLabel) {
+    return;
+  }
+
+  els.dayStartSelectMenu.innerHTML = "";
+  DAY_START_OPTIONS.forEach((option) => {
+    const button = buildSelectOption({
+      label: option.label,
+      selected: option.value === state.dayStartHour,
+      onClick: async () => {
+        closeCustomSelect("day-start");
+        await applyDayStartHour(option.value, { reload: true });
+      }
+    });
+    els.dayStartSelectMenu.appendChild(button);
+  });
+
+  const selected = DAY_START_OPTIONS.find((option) => option.value === state.dayStartHour) || DAY_START_OPTIONS[0];
+  els.dayStartSelectLabel.textContent = selected.label;
+}
+
 function renderBookStatus() {
   if (!els.bookStatusTitle || !els.bookStatusMeta) {
     return;
@@ -625,7 +724,7 @@ async function loadBooks() {
 }
 
 async function loadStats() {
-  const stats = await requestNative("getStats");
+  const stats = await requestNative("getStats", state.dayStartHour);
   state.stats = stats;
   els.currentBook.textContent = (
     stats.current_book === "CET4" || stats.current_book === "CET6"
@@ -639,14 +738,14 @@ async function loadStats() {
   updateDailyPlanPresentation();
 }
 async function loadStudyActivity() {
-  state.studyActivity = await requestNative("getStudyActivity");
+  state.studyActivity = await requestNative("getStudyActivity", state.dayStartHour);
   if (!state.studyActivity.length) {
     state.calendarMonthCursor = startOfMonth(new Date());
   }
 }
 
 async function loadDueProjection() {
-  state.dueProjection = await requestNative("getDueProjection", DUE_PROJECTION_DAYS);
+  state.dueProjection = await requestNative("getDueProjection", DUE_PROJECTION_DAYS, state.dayStartHour);
 }
 
 async function loadAboutContent() {
@@ -982,14 +1081,111 @@ function chooseVoice(preferredAccent) {
   );
 }
 
-async function speakCurrentWord() {
-  const item = getCurrentWord();
-  if (!item || !("speechSynthesis" in window)) {
-    return;
+function resolveDictionaryAudioUrl(item, preferredAccent = state.accent) {
+  if (!item?.word) {
+    return "";
   }
 
-  if (state.silentKeepAliveEnabled) {
-    await syncSilentKeepAlive();
+  const accent = preferredAccent === "us" ? "us" : "uk";
+  const rawSpeech = accent === "us" ? item.speech_us : item.speech_uk;
+  const fallbackType = accent === "us" ? 2 : 1;
+  const speech = String(rawSpeech || "").trim();
+
+  if (/^https?:\/\//i.test(speech)) {
+    return speech;
+  }
+
+  const match = /^(.+?)(?:[&?]type=(\d+))$/.exec(speech);
+  if (match) {
+    return `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(match[1])}&type=${encodeURIComponent(match[2])}`;
+  }
+
+  return `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(item.word)}&type=${fallbackType}`;
+}
+
+function resolveSpeechAudioUrl(speech) {
+  const raw = String(speech || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  return `https://dict.youdao.com/dictvoice?audio=${raw}`;
+}
+
+async function playAudioUrl(audioUrl, { onStart, onEnd } = {}) {
+  if (!audioUrl) {
+    return false;
+  }
+
+  if (state.currentAudio) {
+    state.currentAudio.pause();
+    state.currentAudio = null;
+  }
+
+  const audio = new Audio(audioUrl);
+  state.currentAudio = audio;
+  audio.preload = "auto";
+  onStart?.();
+
+  try {
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        finish(false);
+      }, 4500);
+
+      const finish = (ok) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timeoutId);
+        audio.onended = null;
+        audio.onerror = null;
+        if (state.currentAudio === audio) {
+          state.currentAudio = null;
+        }
+        onEnd?.();
+        if (ok) {
+          resolve();
+        } else {
+          reject(new Error("Audio unavailable"));
+        }
+      };
+
+      audio.onended = () => finish(true);
+      audio.onerror = () => finish(false);
+      audio.play().catch(() => finish(false));
+    });
+    return true;
+  } catch {
+    onEnd?.();
+    return false;
+  }
+}
+
+async function playDictionaryAudio(item, accent = state.accent) {
+  const audioUrl = resolveDictionaryAudioUrl(item, accent);
+  const played = await playAudioUrl(audioUrl, {
+    onStart: () => updateSpeakButton("播放中...", accent),
+    onEnd: () => updateSpeakButton("播放", accent)
+  });
+
+  if (!played) {
+    updateSpeakButton("使用系统发音", accent);
+    await wait(180);
+  }
+
+  return played;
+}
+
+async function speakWithTts(item, accent = state.accent) {
+  if (!item || !("speechSynthesis" in window)) {
+    return;
   }
 
   await waitForSpeechReady();
@@ -997,7 +1193,7 @@ async function speakCurrentWord() {
 
   const synth = window.speechSynthesis;
   const utterance = new SpeechSynthesisUtterance(item.word);
-  const voice = chooseVoice(state.accent);
+  const voice = chooseVoice(accent);
   if (voice) {
     utterance.voice = voice;
     utterance.lang = voice.lang;
@@ -1008,9 +1204,9 @@ async function speakCurrentWord() {
   utterance.rate = 0.92;
   utterance.pitch = 1;
   utterance.volume = 1;
-  utterance.onstart = () => updateSpeakButton("播放中...");
-  utterance.onend = () => updateSpeakButton("播放");
-  utterance.onerror = () => updateSpeakButton("重试发音");
+  utterance.onstart = () => updateSpeakButton("播放中...", accent);
+  utterance.onend = () => updateSpeakButton("播放", accent);
+  utterance.onerror = () => updateSpeakButton("重试发音", accent);
 
   if (synth.paused) {
     synth.resume();
@@ -1023,6 +1219,24 @@ async function speakCurrentWord() {
   }
 
   synth.speak(utterance);
+}
+
+async function speakCurrentWord(accent = state.accent) {
+  const item = getCurrentWord();
+  if (!item) {
+    return;
+  }
+
+  if (state.silentKeepAliveEnabled) {
+    await syncSilentKeepAlive();
+  }
+
+  const usedDictionaryAudio = await playDictionaryAudio(item, accent);
+  if (usedDictionaryAudio) {
+    return;
+  }
+
+  await speakWithTts(item, accent);
 }
 
 function scheduleAutoplay() {
@@ -1078,6 +1292,83 @@ function renderMeanings(meanings) {
   });
 }
 
+function stripHtml(text) {
+  const template = document.createElement("template");
+  template.innerHTML = String(text || "");
+  return template.content.textContent || "";
+}
+
+function renderExamples(examples) {
+  if (!els.examplesBlock) {
+    return;
+  }
+
+  const list = (examples || [])
+    .map((entry) => ({
+      english: stripHtml(entry.english).trim(),
+      chinese: String(entry.chinese || "").trim(),
+      speech: String(entry.speech || "").trim()
+    }))
+    .filter((entry) => entry.english)
+    .slice(0, 3);
+
+  els.examplesBlock.innerHTML = "";
+  els.examplesBlock.classList.toggle("is-hidden", !list.length);
+
+  if (!list.length) {
+    return;
+  }
+
+  const title = document.createElement("p");
+  title.className = "examples-title";
+  title.textContent = "例句";
+  els.examplesBlock.appendChild(title);
+
+  list.forEach((entry) => {
+    const item = document.createElement("div");
+    item.className = "example-item";
+
+    const englishRow = document.createElement("div");
+    englishRow.className = "example-english-row";
+
+    if (entry.speech) {
+      const button = document.createElement("button");
+      button.className = "example-audio-button";
+      button.type = "button";
+      button.textContent = "🔊";
+      button.setAttribute("aria-label", "播放例句发音");
+      button.title = "播放例句发音";
+      button.addEventListener("click", async () => {
+        button.dataset.state = "playing";
+        await playAudioUrl(resolveSpeechAudioUrl(entry.speech), {
+          onStart: () => {
+            button.dataset.state = "playing";
+          },
+          onEnd: () => {
+            button.dataset.state = "idle";
+          }
+        });
+      });
+      englishRow.appendChild(button);
+    }
+
+    const english = document.createElement("p");
+    english.className = "example-english";
+    english.textContent = entry.english;
+    englishRow.appendChild(english);
+    item.appendChild(englishRow);
+
+    if (entry.chinese) {
+      const chinese = document.createElement("p");
+      chinese.className = "example-chinese";
+      chinese.textContent = entry.chinese;
+      item.appendChild(chinese);
+    }
+
+    els.examplesBlock.appendChild(item);
+  });
+}
+
 function setAnswerVisibility(revealed) {
   els.answerContent.classList.toggle("is-hidden", !revealed);
   els.answerPlaceholder.classList.toggle("is-hidden", revealed);
@@ -1094,23 +1385,6 @@ function updateTaskTypeTag(item) {
   const taskType = item.task_type || (item.is_new_word ? "new" : "review");
   els.taskTypeTag.textContent = taskTypeText[taskType] || "学习中";
   els.taskTypeTag.dataset.type = taskType;
-}
-
-function updateReviewState(item) {
-  if (!item) {
-    els.reviewStatus.textContent = "已完成";
-    els.reviewStatus.dataset.state = "done";
-    return;
-  }
-
-  if (!item.reviewed) {
-    els.reviewStatus.textContent = item.revealed ? "已显示答案" : "未作答";
-    els.reviewStatus.dataset.state = item.revealed ? "revealed" : "idle";
-    return;
-  }
-
-  els.reviewStatus.textContent = `当前选择：${actionText[item.action] || item.action}`;
-  els.reviewStatus.dataset.state = item.action || "done";
 }
 
 function setReviewButtonsDisabled(disabled) {
@@ -1215,9 +1489,9 @@ function renderEmpty() {
   els.phoneticUk.textContent = "";
   els.phoneticUs.textContent = "";
   renderMeanings([]);
+  renderExamples([]);
   setAnswerVisibility(false);
   updateTaskTypeTag(null);
-  updateReviewState(null);
   updateButtons(null);
 }
 
@@ -1247,10 +1521,12 @@ function renderCurrentWord() {
   els.progressText.textContent = `${state.index + 1} / ${state.tasks.length}`;
   els.phoneticUk.textContent = item.phonetic_uk ? `英 /${item.phonetic_uk}/` : "英音待补充";
   els.phoneticUs.textContent = item.phonetic_us ? `美 /${item.phonetic_us}/` : "美音待补充";
+  updateSpeakButton("播放", "uk");
+  updateSpeakButton("播放", "us");
   renderMeanings(item.meanings);
+  renderExamples(item.examples);
   setAnswerVisibility(item.revealed);
   updateTaskTypeTag(item);
-  updateReviewState(item);
   updateButtons(item);
   persistSession();
   refreshScrollFades();
@@ -1638,7 +1914,9 @@ function renderSettingsView() {
   }
   renderBookOptions();
   renderBatchSizeOptions();
+  renderDayStartOptions();
   renderBookStatus();
+  renderAccentState();
   setDataActionMessage(state.dataActionMessage);
   refreshScrollFades();
 }
@@ -1737,8 +2015,11 @@ function bindEvents() {
   });
   els.settingsButton.addEventListener("click", openSettingsModal);
   els.revealButton.addEventListener("click", revealAnswer);
-  els.speakButton.addEventListener("click", () => {
-    speakCurrentWord().catch(console.error);
+  els.speakUkButton?.addEventListener("click", () => {
+    speakCurrentWord("uk").catch(console.error);
+  });
+  els.speakUsButton?.addEventListener("click", () => {
+    speakCurrentWord("us").catch(console.error);
   });
   els.prevButton.addEventListener("click", navigatePrev);
   els.nextButton.addEventListener("click", navigateNext);
@@ -1805,6 +2086,20 @@ function bindEvents() {
   els.bookSelectButton?.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleCustomSelect("book");
+  });
+
+  els.dayStartSelectButton?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleCustomSelect("day-start");
+  });
+
+  els.accentSwitch?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-accent]");
+    if (!button) {
+      return;
+    }
+
+    applyAccent(button.dataset.accent);
   });
 
   document.addEventListener("click", (event) => {
@@ -1948,6 +2243,8 @@ function bindEvents() {
 async function init() {
   const savedTheme = localStorage.getItem(STORAGE_KEYS.theme) || "dark";
 
+  state.accent = normalizeAccent(localStorage.getItem(STORAGE_KEYS.accent));
+  state.dayStartHour = readStoredNumber(STORAGE_KEYS.dayStartHour, 0, normalizeDayStartHour);
   state.dailyPlan = readStoredNumber(STORAGE_KEYS.dailyPlan, DEFAULT_DAILY_PLAN, normalizeDailyPlan);
   state.batchSize = readStoredNumber(STORAGE_KEYS.batchSize, DEFAULT_BATCH_SIZE, normalizeBatchSize);
   state.silentKeepAliveEnabled = readStoredBoolean(STORAGE_KEYS.silentKeepAlive, false);
@@ -1955,6 +2252,7 @@ async function init() {
     && readStoredBoolean(STORAGE_KEYS.enhancedSilentKeepAlive, false);
 
   applyTheme(savedTheme === "light" ? "light" : "dark");
+  renderDayStartOptions();
   applyDailyPlan(state.dailyPlan);
   await applyBatchSize(state.batchSize, { resetSession: false });
   renderAccentState();

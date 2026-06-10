@@ -90,10 +90,10 @@ function emitWindowState() {
 }
 
 function setupIpc() {
-  ipcMain.handle("engram:get-stats", () => store.getStats());
-  ipcMain.handle("engram:get-study-activity", () => store.getStudyActivity());
+  ipcMain.handle("engram:get-stats", (_event, dayStartHour) => store.getStats(dayStartHour));
+  ipcMain.handle("engram:get-study-activity", (_event, dayStartHour) => store.getStudyActivity(dayStartHour));
   ipcMain.handle("engram:get-today-tasks", (_event, limit) => store.getTodayTasks(limit));
-  ipcMain.handle("engram:get-due-projection", (_event, days) => store.getDueProjection(days));
+  ipcMain.handle("engram:get-due-projection", (_event, days, dayStartHour) => store.getDueProjection(days, dayStartHour));
   ipcMain.handle("engram:list-books", () => store.listBooks());
   ipcMain.handle("engram:get-current-book", () => store.getCurrentBook());
   ipcMain.handle("engram:switch-book", (_event, bookKey) => store.switchBook(bookKey));

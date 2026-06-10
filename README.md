@@ -6,13 +6,17 @@ Engram is a desktop vocabulary trainer built for focused, high-volume English wo
 
 ## Project Overview
 
-Engram is designed for learners who want a fast, distraction-light workflow instead of a gamified memorization app. The current version ships with a CET-6 vocabulary dataset and supports local progress tracking, review scheduling, study statistics, and a packaged Windows desktop experience.
+Engram is designed for learners who want a fast, distraction-light workflow instead of a gamified memorization app. The current version ships with multiple built-in vocabulary books, local progress tracking, review scheduling, study statistics, contextual examples, pronunciation playback, and a packaged Windows desktop experience.
 
 ## Features
 
 - Batch-based study flow with mixed new words and due reviews
 - Three feedback levels: `unknown`, `vague`, `known`
 - Spaced review intervals backed by local SQLite data
+- Built-in vocabulary books for CET-4, CET-6, postgraduate entrance exam, IELTS, and TOEFL study
+- Example sentences on word cards when source data is available
+- UK / US pronunciation playback with dictionary audio first and system TTS fallback
+- Optional study-day rollover at 00:00 or 05:00
 - Statistics dashboard with calendar and chart views
 - Light and dark themes
 - Local desktop app experience with no backend service required
@@ -75,7 +79,7 @@ The release configuration is set up to generate:
 
 ## Data Source
 
-This project includes CET-6 vocabulary JSON data used to build the local SQLite database.
+This project includes vocabulary JSON data used to build the local SQLite database.
 
 Acknowledgement:
 
@@ -96,4 +100,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - This project is intended for learning and personal productivity purposes.
 - The included vocabulary data remains subject to its original source terms and attribution requirements.
 - No warranty is provided for fitness, correctness, or uninterrupted availability.
-
